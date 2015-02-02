@@ -1,11 +1,12 @@
 from flask.ext.restful import Resource, marshal_with, abort
 from . import db, api
 from flask import g, request
-from fields import user_fields, token_fields, subreddit_fields
-from parsers import user_parser, token_parser, subreddit_parser
-from models import User, BadSignature, SignatureExpired, Subreddit
+from fields import user_fields, token_fields, subreddit_fields, post_fields, comment_fields
+from parsers import user_parser, token_parser, subreddit_parser, post_parser, comment_parser
+from models import User, BadSignature, SignatureExpired, Subreddit, Entry, Post, Vote
 from functools import wraps
 import base64
+
 
 def token_required(func):
     """
@@ -13,23 +14,24 @@ def token_required(func):
     Calls abort if expired or invalid token.
     g is a thread local variable provided by flask.
     """
-    @wraps(func) # Presrve doc string and other goodies.
+    @wraps(func)  # Presrve doc string and other goodies.
     def decorator(*args, **kwargs):
         token = request.headers.get('X-Auth-Token', None)
         if token is None:
             abort(401, message="Please provide X-Auth-Token header.")
         try:
             g.user = User.verify_auth_token(token)
-            return func(*args, **kwargs) # Call wraped function
-        except BadSignature:
-            abort(401, message="Invalid token provided.")
+            return func(*args, **kwargs)  # Call wraped function
         except SignatureExpired:
             abort(401, message="Token has expired.")
+        except BadSignature:
+            abort(401, message="Invalid token provided.")
     return decorator
 
 
 @api.resource('/tokens', endpoint='token_ep')
 class TokenResource(Resource):
+
     """Handle token requests."""
     @marshal_with(token_fields)
     def post(self):
@@ -56,6 +58,7 @@ class TokenResource(Resource):
             # Not a base64 string
             abort(400, message="X-Auth must be a base64 string.")
 
+
 @api.resource('/users', endpoint='users_ep')
 class UsersResource(Resource):
     method_decorators = [marshal_with(user_fields)]
@@ -77,7 +80,8 @@ class UsersResource(Resource):
         """
         args = user_parser.parse_args()
         if len(args['username']) < 4 or len(args['password']) < 8:
-            abort(400, message="Username must be at least four characters long and password must be eight.")
+            abort(
+                400, message="Username must be at least four characters long and password must be eight.")
         user = User(username=args['username'], password=args['password'])
         db.session.add(user)
         db.session.commit()
@@ -104,11 +108,14 @@ class UserResource(Resource):
         """
         args = user_parser.parse_args()
         if len(args['password']) < 8:
-            abort(400, message="Password must be at least eight characters long.")
-        g.user.password = args['password'] # There is a gaping security hole here, try to find it out !
+            abort(
+                400, message="Password must be at least eight characters long.")
+        # There is a gaping security hole here, try to find it out !
+        g.user.password = args['password']
         db.session.add(g.user)
         db.session.commit()
         return g.user
+
 
 @api.resource('/subreddits', endpoint="subreddits_ep")
 class SubredditsResource(Resource):
@@ -129,13 +136,36 @@ class SubredditsResource(Resource):
         db.session.commit()
         return s.to_dict(), 201
 
+
 @api.resource('/r/<string:name>', endpoint="subreddit_ep")
 class SubredditResource(Resource):
-    method_decorators = [marshal_with(subreddit_fields)]
 
+    @marshal_with(subreddit_fields)
     def get(self, name):
         sub = Subreddit.query.get_or_404(name)
         return sub.to_dict()
+
+    @token_required
+    @marshal_with(post_fields)
+    def post(self, name):
+        """post method posts to a subreddit!, How's that for semantic web??!"""
+        sub = Subreddit.query.get_or_404(name)
+        args = post_parser.parse_args()
+        if len(args['title']) < 5 or len(args['body']) < 10:
+            abort(
+                400, message="Post title must be at least five characters long and post body must be at least ten.")
+        post = Post(title=args['title'], body=args['body'])
+        db.session.add(post)
+        g.user.entries.append(post)
+        sub.posts.append(post)
+        db.session.add(sub)
+        db.session.add(g.user)
+        vote = Vote(voter=g.user, up=True, entry=post)
+        post.votes.append(vote)
+        db.session.add(vote)
+        db.session.commit()
+        return post.to_dict()
+
 
 @api.resource('/r/<string:name>/subscribe', endpoint="subreddit_subscription_ep")
 class SubredditSubscription(Resource):
@@ -156,3 +186,80 @@ class SubredditSubscription(Resource):
         db.session.add(sub)
         db.session.commit()
         return {"message": "unsubscribed"}, 200
+
+
+@api.resource('/r/<string:subreddit>/posts/<string:title>', endpoint="post_ep")
+class PostResource(Resource):
+
+    @marshal_with(post_fields)
+    def get(self, subreddit, title):
+        sub = Subreddit.query.get_or_404(subreddit)
+        return Post.query.filter_by(title=title, subreddit=sub).first_or_404().to_dict()
+
+    @token_required
+    @marshal_with(comment_fields)
+    def post(self, subreddit, title):
+        """Adds a comment"""
+        sub = Subreddit.query.get_or_404(subreddit)
+        post = Post.query.filter_by(title=title, subreddit=sub).first_or_404()
+        args = comment_parser.parse_args()
+        if len(args['body']) < 1:
+            abort(400, message="Comment must have a body.")
+        entry = Entry(body=args['body'])
+        db.session.add(entry)
+        g.user.entries.append(entry)
+        db.session.add(g.user)
+        vote = Vote(voter=g.user, up=True, entry=entry)
+        entry.votes.append(vote)
+        db.session.add(vote)
+        db.session.commit()
+        return entry.to_dict(), 201
+
+
+class VoteResource(Resource):
+    method_decorators = [token_required]
+
+    def __init__(self, direction):
+        """
+        :direction boolean, True for upvotes.
+        """
+        self.direction = direction
+        super(VoteResource, self).__init__()
+
+    def post(self, id):
+        entry = Entry.query.get_or_404(id)
+        if entry.votes.filter_by(voter=g.user).count() != 0:
+            abort(422, message="You can only vote once")
+        vote = Vote(voter=g.user, up=self.direction, entry=entry)
+        entry.votes.append(vote)
+        db.session.add(vote)
+        db.session.commit()
+        return entry.to_dict(), 201
+
+    def delete(self, id):
+        entry = Entry.query.get_or_404(id)
+        entry.votes.filter_by(voter=g.user).delete(synchronize_session=False)
+        db.session.commit()
+        return {"message": "removed vote"}, 204
+
+
+@api.resource('/entry/<string:id>/up', endpoint="upvote_ep")
+class Upvote(VoteResource):
+
+    def __init__(self):
+        super(Upvote, self).__init__(direction=True)
+
+
+@api.resource('/entry/<string:id>/down', endpoint="downvote_ep")
+class Downvote(VoteResource):
+
+    def __init__(self):
+        super(Downvote, self).__init__(direction=False)
+
+
+@api.resource('/comments/<string:id>', endpoint="comment_ep")
+class CommentResource(Resource):
+    method_decorators = [marshal_with(comment_fields)]
+
+    def get(self, id):
+        return Entry.query.get_or_404(id).to_dict()
