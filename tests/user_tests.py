@@ -6,6 +6,7 @@ import json
 from application import api, db
 from application.resources import *
 
+
 class TestRegistration(object):
 
     def setUp(self):
@@ -29,8 +30,6 @@ class TestRegistration(object):
         assert response.status_code == 201
         response = self.app.get('/users')
         assert len(json.loads(response.data)) == 1
-
-    
 
 
 class TestLogin(object):
@@ -68,7 +67,8 @@ class TestLogin(object):
         data = {
             "password": "12345678"
         }
-        response = self.app.put('/user/{0}'.format(self.user.username), data=data, headers=headers)
+        response = self.app.put(
+            '/user/{0}'.format(self.user.username), data=data, headers=headers)
         assert response.status_code == 200
         x_auth = self.create_auth(self.user.username, "12345678")
         response = self.app.post('/tokens', headers={'X-Auth': x_auth})
@@ -78,4 +78,3 @@ class TestLogin(object):
         """Clear db after a test"""
         db.session.remove()
         db.drop_all()
-   

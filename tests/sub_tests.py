@@ -7,8 +7,8 @@ from application import api, db
 from application.resources import *
 
 
-
 class TestSubreddit(object):
+
     def setUp(self):
         """Creates tables before test cases"""
         from application.models import User
@@ -21,6 +21,7 @@ class TestSubreddit(object):
         db.session.add(self.user_one)
         db.session.add(self.user_two)
         db.session.commit()
+
     def tearDown(self):
         """Clear db after a test"""
         db.session.remove()
@@ -39,7 +40,7 @@ class TestSubreddit(object):
 
     def testCreateSubreddit(self):
         data = {
-           "name": "funny"
+            "name": "funny"
         }
         headers = self.get_token_header(self.user_one)
         response = self.app.post('/subreddits', data=data, headers=headers)
@@ -53,7 +54,7 @@ class TestSubreddit(object):
 
     def testSubscribe(self):
         data = {
-           "name": "funny"
+            "name": "funny"
         }
         headers = self.get_token_header(self.user_two)
         response = self.app.post('/subreddits', data=data, headers=headers)
