@@ -10,3 +10,6 @@ user_parser.add_argument('password', str)
 
 token_parser = reqparse.RequestParser()
 token_parser.add_argument('expires_in', type=int, default=60)
+
+subreddit_parser = reqparse.RequestParser()
+subreddit_parser.add_argument('name', str)
