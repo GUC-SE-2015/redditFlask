@@ -5,6 +5,12 @@ from . import db, app
 from flask.ext.bcrypt import generate_password_hash, check_password_hash
 from itsdangerous import TimedJSONWebSignatureSerializer, SignatureExpired, BadSignature
 
+# Secondary table for subscriptions
+subscriptions = db.Table('subscriptions',
+    db.Column('user_username', db.String(256), db.ForeignKey('user.username')),
+    db.Column('subreddit_name', db.String(256), db.ForeignKey('subreddit.name'))
+    )
+
 class User(db.Model):
 
     """
@@ -23,7 +29,8 @@ class User(db.Model):
 
     def to_dict(self):
         return {
-            "username": self.username
+            "username": self.username,
+            "subscriptions": [ s.to_dict() for s in self.subscriptions]
         }
 
     @property
@@ -62,4 +69,15 @@ class User(db.Model):
             raise BadSignature("Could not identify owner.")
         return user
 
+class Subreddit(db.Model):
+    name = db.Column(db.String(256), primary_key=True)
+    subscribers = db.relationship('User', secondary=subscriptions, backref=db.backref('subscriptions'))
 
+    def __init__(self, name=None):
+        self.name = name
+        super(Subreddit, self).__init__()
+
+    def to_dict(self):
+        return {
+            "name": self.name
+        }
