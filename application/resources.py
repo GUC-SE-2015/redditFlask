@@ -1,9 +1,9 @@
 from flask.ext.restful import Resource, marshal_with, abort
 from . import db, api
 from flask import g, request
-from fields import user_fields, token_fields
-from parsers import user_parser, token_parser
-from models import User, BadSignature, SignatureExpired
+from fields import user_fields, token_fields, subreddit_fields
+from parsers import user_parser, token_parser, subreddit_parser
+from models import User, BadSignature, SignatureExpired, Subreddit
 from functools import wraps
 import base64
 
@@ -110,3 +110,49 @@ class UserResource(Resource):
         db.session.commit()
         return g.user
 
+@api.resource('/subreddits', endpoint="subreddits_ep")
+class SubredditsResource(Resource):
+    method_decorators = [marshal_with(subreddit_fields)]
+
+    def get(self):
+        """List all subreddits"""
+        return [s.to_dict() for s in Subreddit.query.all()]
+
+    @token_required
+    def post(self):
+        args = subreddit_parser.parse_args()
+        if len(args['name']) < 1:
+            abort(400, message="Subreddit must have a name.")
+        s = Subreddit(name=args['name'])
+        s.subscribers.append(g.user)
+        db.session.add(s)
+        db.session.commit()
+        return s.to_dict(), 201
+
+@api.resource('/r/<string:name>', endpoint="subreddit_ep")
+class SubredditResource(Resource):
+    method_decorators = [marshal_with(subreddit_fields)]
+
+    def get(self, name):
+        sub = Subreddit.query.get_or_404(name)
+        return sub.to_dict()
+
+@api.resource('/r/<string:name>/subscribe', endpoint="subreddit_subscription_ep")
+class SubredditSubscription(Resource):
+    method_decorators = [token_required]
+
+    def post(self, name):
+        sub = Subreddit.query.get_or_404(name)
+        sub.subscribers.append(g.user)
+        db.session.add(sub)
+        db.session.commit()
+        return {"message": "subscribed"}, 201
+
+    def delete(self, name):
+        sub = Subreddit.query.get_or_404(name)
+        if g.user not in sub.subscribers:
+            abort(422, message="You are not subscribed.")
+        sub.subscribers.remove(g.user)
+        db.session.add(sub)
+        db.session.commit()
+        return {"message": "unsubscribed"}, 200
