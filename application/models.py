@@ -7,9 +7,28 @@ from itsdangerous import TimedJSONWebSignatureSerializer, SignatureExpired, BadS
 
 # Secondary table for subscriptions
 subscriptions = db.Table('subscriptions',
-    db.Column('user_username', db.String(256), db.ForeignKey('user.username')),
-    db.Column('subreddit_name', db.String(256), db.ForeignKey('subreddit.name'))
-    )
+                         db.Column(
+                             'user_username', db.String(256), db.ForeignKey('user.username')),
+                         db.Column('subreddit_name', db.String(
+                             256), db.ForeignKey('subreddit.name'))
+                         )
+
+# Association object for Karma
+
+
+class Vote(db.Model):
+    voter_username = db.Column(
+        db.String(256), db.ForeignKey('user.username'), primary_key=True)
+    entry_id = db.Column(
+        db.Integer, db.ForeignKey('entry.id'), primary_key=True)
+    weight = db.Column(db.Integer)
+
+    def __init__(self, voter=None, up=True, entry=None):
+        self.weight = 1 if up else -1
+        self.voter_username = voter.username
+        self.entry_id = entry.id
+        super(Vote, self).__init__()
+
 
 class User(db.Model):
 
@@ -20,6 +39,8 @@ class User(db.Model):
     """
     username = db.Column(db.String(256), primary_key=True)
     password_hash = db.Column(db.String(60), unique=True, nullable=False)
+    entries = db.relationship('Entry', backref='author')
+    votes = db.relationship('Vote', lazy='dynamic', backref='voter')
 
     def __init__(self, username=None, password=None):
         self.username = username
@@ -27,10 +48,19 @@ class User(db.Model):
             self.password = password
         super(User, self).__init__()
 
+    @property
+    def karma(self):
+        sums = [post.votes.with_entities(
+            db.func.sum(Vote.weight).label('sum')).all()[0][0] for post in self.entries]
+        return sum(sums)
+
     def to_dict(self):
         return {
             "username": self.username,
-            "subscriptions": [ s.to_dict() for s in self.subscriptions]
+            "subscriptions": [s.to_dict() for s in self.subscriptions],
+            "posts": [e.to_dict() for e in self.entries if isinstance(e, Post)],
+            "comments": [e.to_dict() for e in self.entries if not isinstance(e, Post)],
+            "karma": self.karma
         }
 
     @property
@@ -69,9 +99,12 @@ class User(db.Model):
             raise BadSignature("Could not identify owner.")
         return user
 
+
 class Subreddit(db.Model):
     name = db.Column(db.String(256), primary_key=True)
-    subscribers = db.relationship('User', secondary=subscriptions, backref=db.backref('subscriptions'))
+    subscribers = db.relationship(
+        'User', secondary=subscriptions, backref=db.backref('subscriptions'))
+    posts = db.relationship('Post', backref='subreddit')
 
     def __init__(self, name=None):
         self.name = name
@@ -79,5 +112,63 @@ class Subreddit(db.Model):
 
     def to_dict(self):
         return {
-            "name": self.name
+            "name": self.name,
+            "posts": [p.to_dict() for p in self.posts]
         }
+
+
+class Entry(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    user_username = db.Column(db.String(256), db.ForeignKey('user.username'))
+    body = db.Column(db.Text)
+    parent_id = db.Column(db.Integer, db.ForeignKey('entry.id'))
+    parent = db.relationship(
+        'Entry', backref=db.backref('comments', lazy='dynamic'), remote_side=[id])
+    type = db.Column('type', db.String(128))  # discriminator
+    votes = db.relationship('Vote', lazy='dynamic', backref='entry')
+
+    @property
+    def upvotes(self):
+        return self.votes.filter(Vote.weight == 1).count()
+
+    @property
+    def downvotes(self):
+        return self.votes.filter(Vote.weight == -1).count()
+
+    def __init__(self, body=None):
+        self.body = body
+        super(Entry, self).__init__()
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "body": self.body,
+            "comments": [c.to_dict() for c in self.comments],
+            "author": self.author.username,
+            "upvotes": self.upvotes,
+            "downvotes": self.downvotes
+        }
+
+    __mapper_args__ = {
+        'polymorphic_identity': 'entry',
+        'polymorphic_on': type
+    }
+
+
+class Post(Entry):
+    id = db.Column(db.Integer, db.ForeignKey('entry.id'), primary_key=True)
+    title = db.Column(db.String(512), index=True, nullable=False)
+    subreddit_name = db.Column(db.String(256), db.ForeignKey('subreddit.name'))
+    __mapper_args__ = {
+        'polymorphic_identity': 'post'
+    }
+
+    def __init__(self, title=None, **kwargs):
+        self.title = title
+        super(Post, self).__init__(**kwargs)
+
+    def to_dict(self):
+        dic = super(Post, self).to_dict()
+        dic['title'] = self.title
+        dic['subreddit'] = self.subreddit.name
+        return dic
