@@ -68,7 +68,7 @@ class TestLogin(object):
             "password": "12345678"
         }
         response = self.app.put(
-            '/user/{0}'.format(self.user.username), data=data, headers=headers)
+            '/u/{0}'.format(self.user.username), data=data, headers=headers)
         assert response.status_code == 200
         x_auth = self.create_auth(self.user.username, "12345678")
         response = self.app.post('/tokens', headers={'X-Auth': x_auth})

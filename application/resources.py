@@ -89,7 +89,7 @@ class UsersResource(Resource):
         return user.to_dict(), 201
 
 
-@api.resource('/user/<string:username>', endpoint='user_ep')
+@api.resource('/u/<string:username>', endpoint='user_ep')
 class UserResource(Resource):
     method_decorators = [marshal_with(user_fields)]
 
@@ -142,6 +142,8 @@ class SubredditResource(Resource):
 
     @marshal_with(subreddit_fields)
     def get(self, name):
+        if name == 'all':
+            return [s.to_dict() for s in Subreddit.query.all()]
         sub = Subreddit.query.get_or_404(name)
         return sub.to_dict()
 

@@ -48,7 +48,7 @@ class TestSubreddit(object):
         response = self.app.get('/subreddits')
         assert response.status_code == 200
         assert len(json.loads(response.data)) == 1
-        response = self.app.get('/user/{0}'.format(self.user_one.username))
+        response = self.app.get('/u/{0}'.format(self.user_one.username))
         rdata = json.loads(response.data)
         assert len(rdata['subscriptions']) == 1
 
@@ -61,11 +61,11 @@ class TestSubreddit(object):
         headers = self.get_token_header(self.user_two)
         response = self.app.post('/r/funny/subscribe', headers=headers)
         assert response.status_code == 201
-        response = self.app.get('/user/{0}'.format(self.user_two.username))
+        response = self.app.get('/u/{0}'.format(self.user_two.username))
         rdata = json.loads(response.data)
         assert len(rdata['subscriptions']) == 1
         response = self.app.delete('/r/funny/subscribe', headers=headers)
         assert response.status_code == 200
-        response = self.app.get('/user/{0}'.format(self.user_two.username))
+        response = self.app.get('/u/{0}'.format(self.user_two.username))
         rdata = json.loads(response.data)
         assert len(rdata['subscriptions']) == 0

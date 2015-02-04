@@ -140,12 +140,17 @@ class Entry(db.Model):
         super(Entry, self).__init__()
 
     def to_dict(self):
+        from flask import g
+        myvote = 0
+        if hasattr(g, 'user') and self.votes.filter_by(voter=g.user).first():
+            myvote = self.votes.filter_by(voter=g.user).first().weight
         return {
             "id": self.id,
             "body": self.body,
             "comments": [c.to_dict() for c in self.comments],
             "author": self.author.username,
             "upvotes": self.upvotes,
+            "myvote": myvote,
             "downvotes": self.downvotes
         }
 

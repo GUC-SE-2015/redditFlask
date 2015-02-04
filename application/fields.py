@@ -8,6 +8,7 @@ comment_fields = {
     "body": fields.String,
     "upvotes": fields.Integer,
     "downvotes": fields.Integer,
+    "myvote": fields.Integer,
     "upvote_url": fields.Url(endpoint="upvote_ep"),
     "downvote_url": fields.Url(endpoint="downvote_ep"),
     'url': fields.Url(endpoint='comment_ep')
@@ -19,6 +20,7 @@ post_fields = {
     "body": fields.String,
     "author": fields.String,
     "upvotes": fields.Integer,
+    "myvote": fields.Integer,
     "downvotes": fields.Integer,
     "comments": fields.List(fields.Nested(comment_fields)),
     "upvote_url": fields.Url(endpoint="upvote_ep"),

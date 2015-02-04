@@ -53,6 +53,7 @@ class TestPosts(object):
         assert rdata['author'] == self.user.username
         assert rdata['upvotes'] == 1
         assert rdata['downvotes'] == 0
+        assert rdata['myvote'] == 1
         response = self.app.get('/r/funny')
         rdata = json.loads(response.data)
         assert len(rdata['posts']) == 1
@@ -77,7 +78,8 @@ class TestPosts(object):
         response = self.app.get(post_url)
         assert json.loads(response.data)['downvotes'] == 1
         assert json.loads(response.data)['upvotes'] == 1
-        response = self.app.get('/user/{0}'.format(self.user.username))
+        assert json.loads(response.data)['myvote'] == 0
+        response = self.app.get('/u/{0}'.format(self.user.username))
         assert json.loads(response.data)['karma'] == 0
         # Remove downvote
         response = self.app.delete(post_down_url, headers=headers)
@@ -85,14 +87,14 @@ class TestPosts(object):
         # upvote
         response = self.app.post(post_up_url, headers=headers)
         assert response.status_code == 201
-        response = self.app.get('/user/{0}'.format(self.user.username))
+        response = self.app.get('/u/{0}'.format(self.user.username))
         rdata = json.loads(response.data)
         assert rdata['karma'] == 2
         response = self.app.get(post_url)
         rdata = json.loads(response.data)
         assert rdata['upvotes'] == 2
         assert rdata['downvotes'] == 0
-        response = self.app.get('/user/{0}'.format(self.user.username))
+        response = self.app.get('/u/{0}'.format(self.user.username))
         assert json.loads(response.data)['karma'] == 2
 
     def testComment(self):
@@ -111,6 +113,6 @@ class TestPosts(object):
         assert response.status_code == 201
         assert rdata['upvotes'] == 1
         assert rdata['downvotes'] == 0
-        response = self.app.get('/user/{0}'.format(self.user.username))
+        response = self.app.get('/u/{0}'.format(self.user.username))
         rdata = json.loads(response.data)
         assert rdata['karma'] == 2
